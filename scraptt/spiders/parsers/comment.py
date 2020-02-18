@@ -2,7 +2,75 @@
 """PTT COMMENT parsers."""
 import re
 from collections import defaultdict
+from .post import extract_author
+def parse_comments(html_pq):
+    """
+    處理下方回文，將之結構化。
+    
+    input: PyQuery 物件
+    
+    Output: 
+        如果沒有回文，回傳 dict {
+            "comments": [],
+            "post_vote": {
+                "positive": <int>,
+                "negative": <int>,
+                "neutral": <int>
+            }
+        
+        }
+        
+        如果有，則回傳 dict {
+            "comments": [
+                {
+                    "author": <str>,
+                    "type": <str: "neg", "pos", "neu">,
+                    "content": <str>,
+                    "order": <int>
+                },
+            ]
+        }
+    """
+    comments = []
+    post_vote = {
+        "pos": 0,
+        "neg": 0,
+        "neu": 0
+    }
+    
+    type_table = {
+        "推": "pos",
+        "噓": "neg",
+        "→": "neu"
+    }
+    
+    for i, _ in enumerate(html_pq('.push').items()):
+        comment_type = _('.push-tag').text()
+        
+        # 總結
+        if comment_type == "推":
+            post_vote["pos"] += 1
+        elif comment_type == "噓":
+            post_vote["neg"] += 1
+        elif comment_type == "→":
+            post_vote["neu"] += 1
+        else:
+            continue
 
+        comment = {
+            'type': type_table[comment_type],
+            'author': extract_author(_('.push-userid').text()),
+            'content': _('.push-content').text().lstrip(' :'),
+            'order': i+1
+        }
+
+        comments.append(comment)
+
+
+    return {
+        "comments": comments,
+        "post_vote": post_vote
+    }
 
 def comment_counter(comments):
     """

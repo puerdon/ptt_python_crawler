@@ -45,3 +45,5 @@ RETRY_TIMES = 5
 
 # 填入輸出檔案的資料夾位置
 DATA_DIR = "data"
+
+FEED_FORMAT = "json"

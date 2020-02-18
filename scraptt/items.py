@@ -6,16 +6,15 @@ import scrapy
 class PostItem(scrapy.Item):
     """Item for "POST"."""
 
-    id = scrapy.Field()
-    board = scrapy.Field()
-    author = scrapy.Field()
-    time = scrapy.Field()
-    title = scrapy.Field()
-    content = scrapy.Field()
-    ip = scrapy.Field()
-    quote = scrapy.Field()
+
+    post_board = scrapy.Field()
+    post_id = scrapy.Field()
+    post_time = scrapy.Field()
+    post_title = scrapy.Field()
+    post_author = scrapy.Field()
+    post_body = scrapy.Field()
+    post_vote = scrapy.Field()
     comments = scrapy.Field()
-    count = scrapy.Field()
 
 
 class MetaItem(scrapy.Item):
