@@ -22,28 +22,47 @@ class PttSpider(scrapy.Spider):
         'ITEM_PIPELINES': {
            # 'scraptt.pipelines.HTMLFilePipeline': 500,
            'scraptt.pipelines.JsonExporterPipeline': 500
-        }
+        },
     }
 
     def __init__(self, *args, **kwargs):
         """__init__ method.
 
         :param: boards: comma-separated board list
-        :param: since: start crawling from this date (format: YYYYMMDD)
+        
+        :param: all: 撈該版所有的文章就對了
+
+        :param: index_from: 如果你很清楚要第幾頁到第幾頁的
+        :param: index_to:   就直接指定index的數字
+
+        :param: since: 如果之前已經撈過前面的資料，那就撈某個時間點之後的，值為10位數的timestamp
         """
         self.boards = kwargs.pop('boards').split(',')
         self.all = kwargs.pop('all', None)
         self.index_from = kwargs.pop('index_from', None)
         self.index_to = kwargs.pop('index_to', None)
+        self.since = kwargs.pop('since', None)
+        self.data_dir = kwargs.pop('data_dir', None)
+        self.log_file = kwargs.pop('log', None)
 
-        self.logger.info(f"boards: {self.boards}")
-        self.logger.info(f"all: {self.all}")
-        self.logger.info(f"pages: index{self.index_from} - index{self.index_to}")
+        self.logger.info(f"要爬的版: {self.boards}")
+        if self.all is not None:
+            self.logger.info(f"是否爬全部? 是")
+
+        if self.index_from is not None and self.index_to is not None:
+            self.logger.info(f"是否指定要爬的index? {self.index_from} - {self.index_to}")
+
+        if self.since is not None:
+            self.logger.info(f"是否指定要從什麼時候開始爬? {datetime.fromtimestamp(int(self.since))}")
+        self.logger.info(f"資料存放位置: {self.data_dir}")
+        self.logger.info(f"log檔位置: {self.log_file}")
 
 
 
     def start_requests(self):
         """Request handler."""
+
+        # 有 all 的話 (爬該版的所有就對了)
         if self.all is not None:
             for board in self.boards:
                 url = f'https://www.ptt.cc/bbs/{board}/index.html'
@@ -52,7 +71,20 @@ class PttSpider(scrapy.Spider):
                     cookies={'over18': '1'},
                     callback=self.parse_latest_index
                 )
-        else:
+        
+        # 有指定要爬的最早日期
+        elif self.since is not None:
+            board = self.boards[0]
+            url = f'https://www.ptt.cc/bbs/{board}/index.html'
+
+            yield scrapy.Request(
+                url,
+                cookies={'over18': '1'},
+                callback=self.parse_index
+            )
+
+        # 
+        elif self.index_from is not None and self.index_to is not None:
             board = self.boards[0]
             for i in range(int(self.index_from), int(self.index_to) + 1):
                 url = f'https://www.ptt.cc/bbs/{board}/index{i}.html'
@@ -61,6 +93,8 @@ class PttSpider(scrapy.Spider):
                     cookies={'over18': '1'},
                     callback=self.parse_index
                 )
+        else:
+            raise Error
 
     def parse_index(self, response):
         """Parse index pages."""
@@ -71,14 +105,39 @@ class PttSpider(scrapy.Spider):
         else:
             topics = response.dom(item_css)
 
-        for topic in list(topics.items()):
-            title = topic.text()
-            href = topic.attr('href')
-            yield scrapy.Request(
-                href,
-                cookies={'over18': '1'},
-                callback=self.parse_post
-            )
+        if self.since is not None:
+            # reverse order to conform to timeline
+            for topic in reversed(list(topics.items())):
+                title = topic.text()      # po文標題
+                href = topic.attr('href') # po文連結
+                timestamp = re.search(r'(\d{10})', href).group(1)
+                # post_time = datetime.fromtimestamp(int(timestamp)) # po文日期
+
+                if int(timestamp) < int(self.since):  # 如果po文時間比我們要的最早時間還要早
+                    return
+                
+                self.logger.info(f'+ {title}, {href}, {datetime.fromtimestamp(int(timestamp))}')
+                yield scrapy.Request(
+                    href, cookies={'over18': '1'}, callback=self.parse_post
+                )
+            # 找出"上頁"按鈕的連結
+            prev_url = response.dom('.btn.wide:contains("上頁")').attr('href')
+            self.logger.info(f'index link: {prev_url}')
+            if prev_url:
+
+                yield scrapy.Request(
+                    prev_url, cookies={'over18': '1'}, callback=self.parse_index
+                )
+        else: 
+            for topic in list(topics.items()):
+
+                title = topic.text()
+                href = topic.attr('href')
+                yield scrapy.Request(
+                    href,
+                    cookies={'over18': '1'},
+                    callback=self.parse_post
+                )
 
     def parse_latest_index(self, response):
         """Parse index pages."""
@@ -113,6 +172,17 @@ class PttSpider(scrapy.Spider):
         dt = datetime.fromtimestamp(int(timestamp))
         dt_str = dt.strftime("%Y%m%d_%H%M")
         article_id = response.url.split('/')[-1].split('.html')[0]
+
+        # 先存一份html
+        data_dir = self.data_dir
+
+        try:
+            os.makedirs(f"{data_dir}/{board}/{dt.year}", exist_ok=True)
+            with open(f"{data_dir}/{board}/{dt.year}/{dt_str}_{article_id}.html", "wb") as f:
+                f.write(response.body)
+        except Exception as e:
+            print(e)
+            print(f"有問題的.html檔: {article_id}")
 
 
         # TBD:
