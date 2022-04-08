@@ -1,6 +1,7 @@
 """Main crawler."""
 import re
 import os
+import json
 from datetime import datetime
 from itertools import groupby
 
@@ -10,18 +11,22 @@ import dateutil.parser as dp
 from .parsers.post import mod_content, extract_author, extract_ip
 from .parsers.comment import parse_comments
 from ..items import PostItem
-
+from .ckipws import CKIP
+from .json2tei import json2tei
 
 class PttSpider(scrapy.Spider):
     """Crawler for PTT."""
 
+    # 斷詞系統
+    ckip = CKIP()
+    
     name = 'ptt_article'
     allowed_domains = ['ptt.cc']
     handle_httpstatus_list = [404]
     custom_settings = {
         'ITEM_PIPELINES': {
            # 'scraptt.pipelines.HTMLFilePipeline': 500,
-           'scraptt.pipelines.JsonExporterPipeline': 500
+           # 'scraptt.pipelines.JsonExporterPipeline': 500
         },
     }
 
@@ -178,7 +183,7 @@ class PttSpider(scrapy.Spider):
 
         try:
             os.makedirs(f"{data_dir}/{board}/{dt.year}", exist_ok=True)
-            with open(f"{data_dir}/{board}/{dt.year}/{dt_str}_{article_id}.html", "wb") as f:
+            with open(f"{data_dir}/{board}/{dt.year}/_{dt_str}_{article_id}.html", "wb") as f:
                 f.write(response.body)
         except Exception as e:
             print(e)
@@ -264,7 +269,7 @@ class PttSpider(scrapy.Spider):
         post = {
             "post_board": post_board,
             "post_id": post_id,
-            "post_time": post_time,
+            "post_time": timestamp,
             "post_title": post_title,
             "post_author": post_author,
             "post_body": body,
@@ -280,4 +285,35 @@ class PttSpider(scrapy.Spider):
         #     "article_id": article_id
         # }
 
+        ###################
+        #  SAVE JSON.     #
+        ###################
+        try:   
+            with open(f"{data_dir}/{board}/{dt.year}/_{dt_str}_{article_id}.json", "w") as f:
+                json.dump(post, f, ensure_ascii=False)
+        except Exception as e:
+            print(e)
+            print(f"錯誤訊息: {e}")
+            error_class = e.__class__.__name__ #取得錯誤類型
+            detail = e.args[0] #取得詳細內容
+            cl, exc, tb = sys.exc_info() #取得Call Stack
+            lastCallStack = traceback.extract_tb(tb)[-1] #取得Call Stack的最後一筆資料
+            fileName = lastCallStack[0] #取得發生的檔案名稱
+            lineNum = lastCallStack[1] #取得發生的行號
+            funcName = lastCallStack[2] #取得發生的函數名稱
+            errMsg = "File \"{}\", line {}, in {}: [{}] {}".format(fileName, lineNum, funcName, error_class, detail)
+            print(errMsg)
+            
+        ###################
+        # WS and save XML #
+        ###################
+        try:   
+            tei = json2tei(post, PttSpider.ckip)
+            with open(f"{data_dir}/{board}/{dt.year}/_{dt_str}_{article_id}.xml", "w") as f:
+                f.write(tei)
+        except Exception as e:
+            print(e)
+            
+        
+        
         yield PostItem(**post)
