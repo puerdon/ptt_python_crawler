@@ -183,7 +183,7 @@ class PttSpider(scrapy.Spider):
 
         try:
             os.makedirs(f"{data_dir}/{board}/{dt.year}", exist_ok=True)
-            with open(f"{data_dir}/{board}/{dt.year}/_{dt_str}_{article_id}.html", "wb") as f:
+            with open(f"{data_dir}/{board}/{dt.year}/{dt_str}_{article_id}.html", "wb") as f:
                 f.write(response.body)
         except Exception as e:
             print(e)
